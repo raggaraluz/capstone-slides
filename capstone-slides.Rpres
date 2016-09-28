@@ -1,0 +1,64 @@
+Text prediction application
+========================================================
+author: Rafael Garcia
+date: `r format(Sys.time(), "%Y-%m-%d")`
+autosize: true
+
+First Slide
+========================================================
+
+
+
+Analysis and data truncation
+========================================================
+
+In order to achieve memory savings, non-common words are deleted
+
+- From training dataset
+- From input text in the application
+
+The number of words was selected to capture a 95% of all the text
+
+```{r, echo=FALSE, cache=TRUE}
+library(quanteda)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+
+sentences <- readLines(file('../data/reduced_dataset.txt', 'rb'), encoding = 'UTF-8')
+# sentences <- sample(sentences, length(sentences) * .2)
+
+docs <- corpus(sentences)
+rm(sentences)
+
+tokensAll <- tokenize(toLower(docs), removeNumbers = T, removePunct = T, removeSeparators = T,
+                      removeTwitter = T, removeSymbols = T, removeURL = T)
+
+dist.1 <- dfm(tokensAll)
+top.1 <- topfeatures(dist.1, 1e10)
+cdf.1 <- cumsum(top.1) / sum(top.1)
+percs <- c(0.8, 0.9, 0.95)
+
+
+percs.text <- paste0(100*percs, '%')
+words.perc <- sapply(percs, function(a) { which(cdf.1 > a)[1] } )
+
+ggplot(mapping = aes(x = seq_along(cdf.1), y = cdf.1)) +
+        geom_line(color = 'blue') +
+        geom_hline(yintercept = percs, lty = 2, color = 'red') +
+        geom_vline(xintercept = words.perc, color = 'red', lty = 2) +
+        geom_label(aes(x=0, y = percs, label = percs.text)) +
+        geom_label(aes(y=0.05, x = words.perc, label = words.perc)) +
+        scale_y_continuous(labels=scales::percent) +
+        xlab('Number of words') + ylab('Coverage') + ggtitle('Coverage vs number of words')
+
+```
+
+
+
+Slide With Plot
+========================================================
+
+```{r, echo=FALSE}
+plot(cars)
+```
