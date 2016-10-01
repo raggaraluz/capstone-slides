@@ -3,30 +3,103 @@ Text prediction application
 author: Rafael Garcia
 date: `r format(Sys.time(), "%Y-%m-%d")`
 autosize: true
+transition: zoom
+transition-speed: default
+font-family: 'Arial'
 
-First Slide
-========================================================
+<style>
+
+/* ordered and unordered list styles */
+.reveal h1, .reveal h2, .reveal h3 {
+  word-wrap: normal;
+  -moz-hyphens: none;
+}
+
+.reveal ul, 
+.reveal ol {
+    font-size: 0.8em;
+}
+
+.reveal ul ul,
+.reveal ul ol,
+.reveal ol ol,
+.reveal ol ul {
+	font-size: 0.7em;
+}
+
+.reveal ul ul, 
+.reveal ol ul {
+    list-style-type: circle;
+}
+
+.reveal p {
+    font-size: 0.9em;
+}
+
+.footer {
+    position: fixed;
+    top: 90%;
+    text-align:left;
+    width:100%;
+}
 
 
 
-Analysis and data truncation
-========================================================
+.small-code pre code {
+  font-size: 1em;
+}
 
-In order to achieve memory savings, non-common words are deleted
+</style>
 
-- From training dataset
-- From input text in the application
 
-The number of words was selected to capture a 95% of all the text
-
-```{r, echo=FALSE, cache=TRUE}
+```{r settings, include=FALSE}
+library(RColorBrewer)
+library(knitr)
 library(quanteda)
 library(dplyr)
-library(ggplot2)
 library(plotly)
+library(ggplot2)
 
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+<div class="footer" style="margin-top:-50px;background-color:transparent;font-size:60px;color:white;top:78%">
+Coursera data science specialization
+</div>
+<div class="footer" style="margin-top:-50px;background-color:transparent;font-size:40px;color:white";top:80%>
+Capstone project
+</div>
+<div class="footer" style="margin-top:-50px;background-color:transparent;font-size:30px;color:white;top:100%">Live application available <a href="https://raggaraluz.shinyapps.io/text-predictor/">here</a>
+</div>
+
+
+Application Features
+========================================================
+incremental: true
+
+### Internals
+
+* Reads text input in English which is tokenized into words and cleaned by removing
+    * numbers
+    * punctuation symbols
+    * uncommon words
+* Based on the text input, it will predict the three most likely words that will follow in the text
+
+***
+
+### Graphical Interface
+
+* Multi-line input text area for free writing and copy/paste
+* Prediction is offered with three labeled buttons
+    * Clicking on any button will add the selected word to the text automatically
+* Stats section to summarize each prediction
+    * Base text used for the prediction
+    * Likelihood of the prediciton based on the model
+
+```{r calculations, include=FALSE, cache=TRUE}
 sentences <- readLines(file('../data/reduced_dataset.txt', 'rb'), encoding = 'UTF-8')
 # sentences <- sample(sentences, length(sentences) * .2)
+entries <- length(sentences)
 
 docs <- corpus(sentences)
 rm(sentences)
@@ -36,6 +109,29 @@ tokensAll <- tokenize(toLower(docs), removeNumbers = T, removePunct = T, removeS
 
 dist.1 <- dfm(tokensAll)
 top.1 <- topfeatures(dist.1, 1e10)
+```    
+
+
+Training data
+========================================================
+### Training set
+
+* Data used for training the prediction model was obtained from HC Corpora (http://www.corpora.heliohost.org/)
+    * Containing more than 4 million entries from blogs, newspapers and twitter
+    * It was sampled to the 10% (about `r round(entries / 1000)`k entries) due to memory and processing capacity constraints
+    * It contains about `r round(sum(top.1)/1e6)`M total words, with `r round(length(top.1)/1e3)`k distinct words
+* Data was tokenized in N-grams with N from 1 to 4
+
+### Prediciton Model
+
+* Prediction model is based on modeling the text input as a Markov Chain
+    * Each state is represented as a n-gram
+    * The follwoing state (which would include the following word) would only depend on the previous state (previous n-gram)
+    
+
+Word filtering
+========================================================
+```{r word_filtering, include=FALSE}
 cdf.1 <- cumsum(top.1) / sum(top.1)
 percs <- c(0.8, 0.9, 0.95)
 
@@ -43,6 +139,17 @@ percs <- c(0.8, 0.9, 0.95)
 percs.text <- paste0(100*percs, '%')
 words.perc <- sapply(percs, function(a) { which(cdf.1 > a)[1] } )
 
+```
+
+In order to achieve memory savings, non-common words are deleted
+- From training dataset
+- From input text in the application
+
+Keeping only `r words.perc[length(words.perc)]` out of `r length(cdf.1)` words (less than a `r paste0(ceiling(100*words.perc[length(words.perc)] / length(cdf.1)), '%')`), the coverage is `r percs.text[length(percs.text)]` of all the text.
+- Huge savings in memory and processing time with small impact on accuracy.
+
+***
+```{r coverage_plot, results='asis'}
 ggplot(mapping = aes(x = seq_along(cdf.1), y = cdf.1)) +
         geom_line(color = 'blue') +
         geom_hline(yintercept = percs, lty = 2, color = 'red') +
@@ -51,14 +158,18 @@ ggplot(mapping = aes(x = seq_along(cdf.1), y = cdf.1)) +
         geom_label(aes(y=0.05, x = words.perc, label = words.perc)) +
         scale_y_continuous(labels=scales::percent) +
         xlab('Number of words') + ylab('Coverage') + ggtitle('Coverage vs number of words')
-
 ```
 
-
-
-Slide With Plot
+Prediction model (II)
 ========================================================
+### Prediction model
+* The model was built based on the document-feature matrix for *N*-grams
+    * It calculates distribution of the last word of the *N*-gram depending (grouped by) the first *N-1* words
+* The prediction is the most common three words calculated in the previous step
+* The model is then applied to the input text by picking the last *N-1* words of the text, looking them up in the model built in the training and getting the three predictions given by the model
 
-```{r, echo=FALSE}
-plot(cars)
-```
+### Back-off model
+* Default model uses *N=4*, so it was trained using 4-grams and prediction is baed on the last *3* words
+* In case *3* words are not available, or they do not provide three different predictions, it will back-off to a model with *N=3*, *N=2* or *N=1* 
+
+
