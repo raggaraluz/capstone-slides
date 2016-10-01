@@ -15,6 +15,10 @@ font-family: 'Arial'
   -moz-hyphens: none;
 }
 
+.small-code pre code {
+  font-size: 0.9em;
+}
+
 .reveal ul, 
 .reveal ol {
     font-size: 0.8em;
@@ -69,7 +73,7 @@ Coursera data science specialization
 <div class="footer" style="margin-top:-50px;background-color:transparent;font-size:40px;color:white";top:80%>
 Capstone project
 </div>
-<div class="footer" style="margin-top:-50px;background-color:transparent;font-size:30px;color:white;top:100%">Live application available <a href="https://raggaraluz.shinyapps.io/text-predictor/">here</a>
+<div class="footer" style="margin-top:-50px;background-color:transparent;font-size:30px;color:white;top:100%">Live application available <a href="https://raggaraluz.shinyapps.io/text-predictor/">here</a>. Code available <a href="https://github.com/raggaraluz/capstone-shiny-app">here</a>
 </div>
 
 
@@ -114,23 +118,6 @@ top.1 <- topfeatures(dist.1, 1e10)
 
 Training data
 ========================================================
-### Training set
-
-* Data used for training the prediction model was obtained from HC Corpora (http://www.corpora.heliohost.org/)
-    * Containing more than 4 million entries from blogs, newspapers and twitter
-    * It was sampled to the 10% (about `r round(entries / 1000)`k entries) due to memory and processing capacity constraints
-    * It contains about `r round(sum(top.1)/1e6)`M total words, with `r round(length(top.1)/1e3)`k distinct words
-* Data was tokenized in N-grams with N from 1 to 4
-
-### Prediciton Model
-
-* Prediction model is based on modeling the text input as a Markov Chain
-    * Each state is represented as a n-gram
-    * The follwoing state (which would include the following word) would only depend on the previous state (previous n-gram)
-    
-
-Word filtering
-========================================================
 ```{r word_filtering, include=FALSE}
 cdf.1 <- cumsum(top.1) / sum(top.1)
 percs <- c(0.8, 0.9, 0.95)
@@ -140,15 +127,15 @@ percs.text <- paste0(100*percs, '%')
 words.perc <- sapply(percs, function(a) { which(cdf.1 > a)[1] } )
 
 ```
+* Data used for training the prediction model was obtained from HC Corpora (http://www.corpora.heliohost.org/)
+    * Containing more than 4 million entries from blogs, newspapers and twitter
+    * It was sampled to the 10% (about `r round(entries / 1000)`k entries) due to memory and processing capacity constraints
+    * It contains about `r round(sum(top.1)/1e6)`M total words, with `r round(length(top.1)/1e3)`k distinct words
+* Non-common words are removed from training dataset and application input
 
-In order to achieve memory savings, non-common words are deleted
-- From training dataset
-- From input text in the application
+*** 
 
-Keeping only `r words.perc[length(words.perc)]` out of `r length(cdf.1)` words (less than a `r paste0(ceiling(100*words.perc[length(words.perc)] / length(cdf.1)), '%')`), the coverage is `r percs.text[length(percs.text)]` of all the text.
-- Huge savings in memory and processing time with small impact on accuracy.
-
-***
+* Target coverage of `r percs.text[length(percs.text)]` keeping only `r paste0(ceiling(100*words.perc[length(words.perc)] / length(cdf.1)), '%')` of the words
 ```{r coverage_plot, results='asis'}
 ggplot(mapping = aes(x = seq_along(cdf.1), y = cdf.1)) +
         geom_line(color = 'blue') +
@@ -160,16 +147,50 @@ ggplot(mapping = aes(x = seq_along(cdf.1), y = cdf.1)) +
         xlab('Number of words') + ylab('Coverage') + ggtitle('Coverage vs number of words')
 ```
 
-Prediction model (II)
-========================================================
-### Prediction model
-* The model was built based on the document-feature matrix for *N*-grams
+Prediction model
+=======================================================
+* Natural language text model is based on Markov Chains
+    * Each state is represented as a N-gram
+    * The follwoing state (which would include the following word) would only depend on the previous state (previous N-gram)
+* This simplify the model by assuming next word only depends on the last N words and not all the text
+
+***
+    
+* The prediction model was built based on the document-feature matrix for *N*-grams
     * It calculates distribution of the last word of the *N*-gram depending (grouped by) the first *N-1* words
 * The prediction is the most common three words calculated in the previous step
-* The model is then applied to the input text by picking the last *N-1* words of the text, looking them up in the model built in the training and getting the three predictions given by the model
+* The model will be applied by picking the last *N-1* words of the text and getting the three predictions given by the model
 
-### Back-off model
-* Default model uses *N=4*, so it was trained using 4-grams and prediction is baed on the last *3* words
-* In case *3* words are not available, or they do not provide three different predictions, it will back-off to a model with *N=3*, *N=2* or *N=1* 
+Back-off model
+========================================================
+left: 50%
+class: small-code
 
+* Default model uses *N=4*
+    * Trained using 4-grams and prediction based on the last *3* words
+* In case of not enough predictions, it will back-off to the model with *N=3*
+    * Trained with 3-grams and prediction based on last 2 words
+* Model will back off to *N=2* and *N=1* if required
 
+*** 
+```{r eval=FALSE, echo=TRUE}
+### SIMPLIFIED CODE
+next.word <- function(input) {
+ tk <- get.tokens(input)
+ l <- length(tk)
+ if (l >= 3) {
+     p <- prediction(tk[l-2], tk[l-1], tk[l], words = 3)
+ }
+ if (length(p) < 3 && l >= 2) {
+     p <- c(p, prediction(tk[l-1], tk[l], words = 3 -  length(p))) 
+ }
+ if (length(p) < 3 && l >= 1) {
+     p <- c(p, prediction(tk[l], words = 3 - length(p)))
+ }
+ if (length(p) < 3) {
+     p <- c(p, prediction(words = 3 - length(p)))
+ }
+ p
+}
+
+```
